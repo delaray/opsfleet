@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "users": {
+    "user-a": {
+      "departments": ["Men"],
+      "excluded_categories": ["Accessories"]
+    },
+    "user-b": {
+      "departments": ["Women"],
+      "excluded_categories": ["Accessories"]
+    },
+    "user-c": {
+      "categories": ["Accessories"]
+    }
+  }
+}

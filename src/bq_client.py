@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 import pandas as pd
 from google.cloud import bigquery

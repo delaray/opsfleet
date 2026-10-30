@@ -13,4 +13,5 @@ chatgpt/
 
 # API Keys
 *.env
- 
+config/grants.local.json
+.local/

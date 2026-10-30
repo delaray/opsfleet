@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "users": {
+    "example-user": [1, 2, 3]
+  }
+}

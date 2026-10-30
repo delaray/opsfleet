@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "trios": [
+    {
+      "id": "demo-items-by-category",
+      "version": 1,
+      "origin": "synthetic_demo",
+      "review_status": "draft",
+      "reviewed_by": null,
+      "allowed_users": ["*"],
+      "metric": "item_count",
+      "group_by": "product_category",
+      "question": "Show item counts by category",
+      "sql": "SELECT product_category, COUNT(*) AS item_count FROM retail_items GROUP BY product_category ORDER BY product_category",
+      "report": "SYNTHETIC DEMO REPORT TEMPLATE: Compare category counts only within the user's authorized products. Counts represent order items, not distinct customers or orders. A high count is an observed volume difference; price, promotion or customer preference are hypotheses requiring further evidence. Suppressed categories are not zero. No real observations or human analyst approval are claimed."
+    },
+    {
+      "id": "demo-item-value-by-month",
+      "version": 1,
+      "origin": "synthetic_demo",
+      "review_status": "draft",
+      "reviewed_by": null,
+      "allowed_users": ["*"],
+      "metric": "item_sale_value",
+      "group_by": "item_month",
+      "question": "Show total item sale value by month",
+      "sql": "SELECT item_month, SUM(sale_price) AS item_sale_value FROM retail_items GROUP BY item_month ORDER BY item_month",
+      "report": "SYNTHETIC DEMO REPORT TEMPLATE: Compare item sale values across complete UTC months and disclose the selected status and date filters. A partial month should not be compared to a full month without a caveat. SUM(sale_price) is item sale value; do not label it net revenue until return, status and currency definitions are approved. A change alone does not establish its cause. No live figures or human-reviewed findings are supplied."
+    },
+    {
+      "id": "demo-average-price-by-status",
+      "version": 1,
+      "origin": "synthetic_demo",
+      "review_status": "draft",
+      "reviewed_by": null,
+      "allowed_users": ["*"],
+      "metric": "average_item_sale_price",
+      "group_by": "item_status",
+      "question": "Show average item sale price by status",
+      "sql": "SELECT item_status, AVG(sale_price) AS average_item_sale_price FROM retail_items GROUP BY item_status ORDER BY item_status",
+      "report": "SYNTHETIC DEMO REPORT TEMPLATE: Describe the arithmetic mean of item transaction prices within each visible status group. Different means may reflect product mix rather than an effect of order status. Do not infer why items were cancelled or returned from aggregate prices. NULL or suppressed output must not be presented as zero. No synthetic value is a fact about the live dataset, and no human expert review is claimed."
+    }
+  ]
+}
