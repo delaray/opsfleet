@@ -1,0 +1,127 @@
+%% OpsFleet POC — architecture and data flow (Mermaid source).
+%% Rendered PNG/SVG were produced from the equivalent Graphviz file poc-architecture.dot.
+%% To render this file directly: npx @mermaid-js/mermaid-cli -i poc-architecture.mmd -o poc-architecture-mermaid.svg
+flowchart TB
+    user(["Executive<br/>CLI operator, --user user-a|b|c"])
+    out(["CLI output<br/>answer or controlled error + request ID"])
+
+    subgraph CLI["main.py — CLI process"]
+        cli["Chat loop / one-shot<br/>run_chat()"]
+        router["Report command router<br/>ReportCommands.handle()"]
+        session["AnalysisSession<br/>last typed request + ≤8 cached results"]
+        parser["Request grammar check<br/>parse_request(): allow-listed phrases only"]
+        grantchk["Grant check<br/>access_snapshot(): fail closed, re-checked per stage"]
+        reportgen["Report generator<br/>deterministic findings + action items (no LLM)"]
+    end
+
+    subgraph AG["LangGraph — analysis graph (src/graph.py)"]
+        g_auth[authorize]
+        g_class["classify<br/>(fixed to 'analysis' in CLI)"]
+        g_retr[retrieve]
+        g_schema["schema_answer<br/>(unreachable from CLI)"]
+        g_plan[plan]
+        g_clar[clarify]
+        g_val[validate]
+        g_exec[execute]
+        g_syn[synthesize]
+        g_chk[check_output]
+        g_fail[query_failed]
+        g_fin[finish]
+    end
+
+    subgraph DG["LangGraph — deletion approval graph (src/report_workflow.py)"]
+        d_appr["approval<br/>interrupt(): show frozen targets"]
+        d_exec["execute<br/>revalidate + atomic soft delete"]
+        d_canc["cancel<br/>no report changes"]
+    end
+
+    sqlval["SQL validator (sqlglot)<br/>single SELECT on retail_items;<br/>must equal approved SQL"]
+    scoped["Trusted executor<br/>product-scope CTE · HAVING ≥5 customers<br/>dry run ≤100 MB · ≤100 rows / 64 KB"]
+    ground["Output grounding<br/>model JSON must equal evidence exactly"]
+    confirm["Confirmation gate<br/>exact 'DELETE &lt;operation-id&gt;', 15 min"]
+
+    gemini["Gemini API<br/>gemini-3.6-flash (REST)"]
+    bq[("BigQuery thelook_ecommerce<br/>order_items ⋈ products")]
+
+    grants[("config/grants.local.json")]
+    golden[("knowledge/golden_trios.demo.json")]
+    sqlite[(".local/opsfleet.sqlite3<br/>reports · deletion ops · audit")]
+
+    telem["Telemetry request_scope()<br/>request ID · deadline · model/query/byte budgets"]
+    traces[(".local/traces.jsonl")]
+    summary["trace_summary<br/>p50/p95, errors, tokens, bytes"]
+
+    user -->|question / command| cli
+    cli -->|every turn| router
+    router -->|not a report command| session
+    session -->|"① scope"| grantchk
+    grants -.->|reload each lookup| grantchk
+    session -->|"② text"| parser
+    parser ==>|canonical request + approved SQL| g_auth
+
+    g_auth ==> g_class
+    g_class ==>|analysis| g_retr
+    g_class -.->|reports / unsupported| g_fin
+    golden -.->|Trios, opt-in| g_retr
+    g_retr ==> g_plan
+    g_retr -.->|schema| g_schema
+    g_plan <-->|"context + approved SQL ⇄ {plan, sql}"| gemini
+    g_plan ==>|candidate SQL| g_val
+    g_plan -.->|empty SQL| g_clar
+    g_val <--> sqlval
+    g_val -.->|"repairable error (≤1)"| g_plan
+    g_val ==>|canonical SQL| g_exec
+    g_exec <-->|SQL ⇄ evidence JSON| scoped
+    scoped <-->|parameterised dry run + job ⇄ aggregate rows| bq
+    g_exec -.->|repairs exhausted| g_fail
+    g_exec ==>|evidence| g_syn
+    g_syn <-->|evidence ⇄ rows as JSON| gemini
+    g_syn ==>|draft JSON| g_chk
+    g_schema -.-> g_chk
+    g_chk <--> ground
+    g_chk ==>|table + caveats| g_fin
+    g_clar --> g_fin
+    g_fail --> g_fin
+    g_fin ==>|answer| out
+
+    router -->|/report| reportgen
+    session -.->|cached evidence| reportgen
+    reportgen -->|"save (owner, scope hash)"| sqlite
+    router -->|"/delete …: freeze targets, pause"| d_appr
+    d_appr -->|user reply| confirm
+    confirm -->|"DELETE &lt;id&gt;"| d_exec
+    confirm -->|"/cancel &lt;id&gt;"| d_canc
+    d_exec -->|soft delete + audit, 1 txn| sqlite
+    d_canc -->|status + audit| sqlite
+
+    AG -.->|events from every node, model attempt, query| telem
+    telem -->|append JSONL| traces
+    traces --> summary
+
+    subgraph Legend
+        direction LR
+        L1[LangGraph node]
+        L2[Validation / security check]
+        L3[Application component]
+        L4[External service]
+        L5[(Local data store)]
+        L6[Observability]
+    end
+
+    classDef lg fill:#CFE2FF,stroke:#3D6FB6,color:#000
+    classDef sec fill:#FFD6D6,stroke:#C0392B,color:#000
+    classDef app fill:#ECECEC,stroke:#666666,color:#000
+    classDef ext fill:#E8D9F7,stroke:#7D3C98,color:#000
+    classDef store fill:#D5F5E3,stroke:#1E8449,color:#000
+    classDef obs fill:#FFF3C4,stroke:#B7950B,color:#000
+    classDef actor fill:#FFFFFF,stroke:#333333,color:#000
+    classDef unused fill:#CFE2FF,stroke:#3D6FB6,stroke-dasharray:5 5,color:#000
+
+    class g_auth,g_class,g_retr,g_plan,g_clar,g_val,g_exec,g_syn,g_chk,g_fail,g_fin,d_appr,d_exec,d_canc,L1 lg
+    class g_schema unused
+    class parser,grantchk,sqlval,scoped,ground,confirm,L2 sec
+    class cli,router,session,reportgen,L3 app
+    class gemini,bq,L4 ext
+    class grants,golden,sqlite,L5 store
+    class telem,traces,summary,L6 obs
+    class user,out actor

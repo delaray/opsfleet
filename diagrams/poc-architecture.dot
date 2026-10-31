@@ -1,0 +1,154 @@
+// OpsFleet POC — architecture and data flow (Graphviz source).
+// Render: dot -Tpng -Gdpi=150 poc-architecture.dot -o poc-architecture.png
+//         dot -Tsvg poc-architecture.dot -o poc-architecture.svg
+// Mermaid equivalent: poc-architecture.mmd
+digraph opsfleet_poc {
+  graph [rankdir=TB, fontname="Helvetica", fontsize=11, splines=spline, nodesep=0.35, ranksep=0.45,
+         newrank=true, compound=true, pad=0.3, bgcolor="white",
+         label=<<B>OpsFleet POC — Architecture &amp; Data Flow</B>  (one CLI turn; Gemini proposes, trusted code decides)>,
+         labelloc=t, fontsize=18];
+  node  [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=10, penwidth=1.2, margin="0.12,0.06"];
+  edge  [fontname="Helvetica", fontsize=9, color="#555555", arrowsize=0.7];
+
+  // ---------------- Colour palette ----------------
+  // LangGraph node    #CFE2FF / #3D6FB6
+  // Trusted check     #FFD6D6 / #C0392B
+  // App component     #ECECEC / #666666
+  // External service  #E8D9F7 / #7D3C98
+  // Local data store  #D5F5E3 / #1E8449
+  // Observability     #FFF3C4 / #B7950B
+  // User              #FFFFFF / #333333
+
+  user [label="Executive\n(CLI operator, --user user-a|b|c)", shape=oval, fillcolor="#FFFFFF", color="#333333"];
+
+  subgraph cluster_cli {
+    label=<<B>main.py — CLI process</B>>; style="rounded,dashed"; color="#999999"; fontsize=12;
+    cli      [label="Chat loop / one-shot\nmain.py run_chat()", fillcolor="#ECECEC", color="#666666"];
+    router   [label="Report command router\nReportCommands.handle()\n/report /reports /show /delete …", fillcolor="#ECECEC", color="#666666"];
+    session  [label="AnalysisSession\nlast typed request + ≤8 cached results\n(in memory, per identity)", fillcolor="#ECECEC", color="#666666"];
+    parser   [label="Request grammar check\nparse_request(): allow-listed phrases only\nfree text never reaches Gemini", fillcolor="#FFD6D6", color="#C0392B"];
+    grantchk [label="Grant check\naccess_snapshot() — fail closed;\nre-checked at every stage", fillcolor="#FFD6D6", color="#C0392B"];
+    reportgen[label="Report generator\ndeterministic findings + action items\n(no LLM)", fillcolor="#ECECEC", color="#666666"];
+  }
+
+  subgraph cluster_graph {
+    label=<<B>LangGraph — analysis graph</B> (src/graph.py, rebuilt per turn)>; style="rounded"; color="#3D6FB6"; fontsize=12;
+    node [fillcolor="#CFE2FF", color="#3D6FB6"];
+    g_auth   [label="authorize"];
+    g_class  [label="classify\n(fixed to 'analysis' in CLI)"];
+    g_retr   [label="retrieve"];
+    g_schema [label="schema_answer\n(unreachable from CLI)", style="rounded,filled,dashed"];
+    g_plan   [label="plan"];
+    g_clar   [label="clarify"];
+    g_val    [label="validate"];
+    g_exec   [label="execute"];
+    g_syn    [label="synthesize"];
+    g_chk    [label="check_output"];
+    g_fail   [label="query_failed"];
+    g_fin    [label="finish"];
+  }
+
+  // Trusted checks attached to graph nodes
+  sqlval  [label="SQL validator (sqlglot)\nsingle SELECT on logical retail_items;\nrebuilt from small grammar;\nmust equal the approved SQL", fillcolor="#FFD6D6", color="#C0392B"];
+  scoped  [label="Trusted executor\nTrustedBigQueryExecutor\n• product-scope CTE (dept/category)\n• HAVING ≥5 distinct customers\n• dry run ≤100 MB, then capped job\n• ≤100 rows, ≤64 KB, typed values", fillcolor="#FFD6D6", color="#C0392B"];
+  ground  [label="Output grounding\nmodel JSON must equal evidence exactly;\nrender escaped table + fixed caveats", fillcolor="#FFD6D6", color="#C0392B"];
+
+  // External services
+  gemini [label="Gemini API\ngemini-3.6-flash (REST, API key)\n30 s/attempt, ≤2 retries", shape=box, fillcolor="#E8D9F7", color="#7D3C98"];
+  bq     [label="BigQuery\nthelook_ecommerce\norder_items ⋈ products\n(orders, users unused)", shape=cylinder, fillcolor="#E8D9F7", color="#7D3C98"];
+
+  // Local data stores
+  grants [label="config/grants.local.json\nuser → catalog scope", shape=cylinder, fillcolor="#D5F5E3", color="#1E8449"];
+  golden [label="knowledge/golden_trios.demo.json\nsynthetic Trios; opt-in --golden-demo;\nvalidated + audience-filtered", shape=cylinder, fillcolor="#D5F5E3", color="#1E8449"];
+  sqlite [label=".local/opsfleet.sqlite3\nreports · deletion ops · audit", shape=cylinder, fillcolor="#D5F5E3", color="#1E8449"];
+
+  subgraph cluster_del {
+    label=<<B>LangGraph — deletion approval graph</B> (src/report_workflow.py)>; style="rounded"; color="#3D6FB6"; fontsize=12;
+    node [fillcolor="#CFE2FF", color="#3D6FB6"];
+    d_appr [label="approval\ninterrupt() — show frozen targets"];
+    d_exec [label="execute\nrevalidate + atomic soft delete"];
+    d_canc [label="cancel\nno report changes"];
+  }
+  confirm [label="Confirmation gate\nonly exact 'DELETE <operation-id>'\nwithin 15 min; versions unchanged", fillcolor="#FFD6D6", color="#C0392B"];
+
+  // Observability
+  telem  [label="Telemetry\nrequest_scope(): request ID, deadline 120 s,\n≤6 model attempts, ≤2 queries, ≤200 MB", fillcolor="#FFF3C4", color="#B7950B"];
+  traces [label=".local/traces.jsonl\ncontent-free events", shape=cylinder, fillcolor="#FFF3C4", color="#B7950B"];
+  summary[label="trace_summary\np50/p95, errors, tokens, bytes", fillcolor="#FFF3C4", color="#B7950B"];
+
+  // ---------------- Main flow ----------------
+  user -> cli [label="question / command"];
+  cli -> router [label="every turn"];
+  router -> session [label="not a report command"];
+  session -> grantchk [label="① scope"];
+  grantchk -> grants [label="reload each lookup", style=dashed, dir=back];
+  session -> parser [label="② text"];
+  parser -> g_auth [label="canonical request JSON\n+ approved SQL", color="#3D6FB6", fontcolor="#3D6FB6", penwidth=1.6];
+
+  g_auth -> g_class [color="#3D6FB6", penwidth=1.6];
+  g_class -> g_retr [label="analysis", color="#3D6FB6", penwidth=1.6];
+  g_retr -> g_plan [color="#3D6FB6", penwidth=1.6];
+  g_retr -> g_schema [label="schema", style=dashed, color="#3D6FB6"];
+  g_class -> g_fin [label="reports /\nunsupported", style=dashed, color="#3D6FB6"];
+  golden -> g_retr [label="Trios", style=dashed];
+  g_plan -> gemini [label="context + approved SQL\n⇄ {plan, sql} JSON", dir=both, color="#7D3C98", fontcolor="#7D3C98"];
+  g_plan -> g_val [label="candidate SQL", color="#3D6FB6", penwidth=1.6];
+  g_plan -> g_clar [label="empty SQL", style=dashed, color="#3D6FB6"];
+  g_val -> sqlval [dir=both, color="#C0392B"];
+  g_val -> g_exec [label="canonical SQL", color="#3D6FB6", penwidth=1.6];
+  g_val -> g_plan [label="repairable\nerror (≤1)", style=dashed, color="#3D6FB6"];
+  g_exec -> scoped [label="SQL ⇄ evidence JSON", dir=both, color="#C0392B", fontcolor="#C0392B"];
+  scoped -> bq [label="parameterised dry run + job\n⇄ aggregate rows", dir=both, color="#7D3C98", fontcolor="#7D3C98"];
+  g_exec -> g_syn [label="evidence", color="#3D6FB6", penwidth=1.6];
+  g_exec -> g_fail [label="repairs\nexhausted", style=dashed, color="#3D6FB6"];
+  g_syn -> gemini [label="evidence ⇄ rows as JSON", dir=both, color="#7D3C98", fontcolor="#7D3C98"];
+  g_syn -> g_chk [label="draft JSON", color="#3D6FB6", penwidth=1.6];
+  g_schema -> g_chk [style=dashed, color="#3D6FB6"];
+  g_chk -> ground [dir=both, color="#C0392B"];
+  g_chk -> g_fin [label="table + caveats", color="#3D6FB6", penwidth=1.6];
+  g_clar -> g_fin [color="#3D6FB6"];
+  g_fail -> g_fin [color="#3D6FB6"];
+  out [label="CLI output\nanswer or controlled error + request ID", shape=oval, fillcolor="#FFFFFF", color="#333333"];
+  g_fin -> out [label="answer", color="#3D6FB6", fontcolor="#3D6FB6", penwidth=1.6];
+
+  // ---------------- Reports ----------------
+  router -> reportgen [label="/report"];
+  session -> reportgen [label="cached evidence", style=dashed];
+  reportgen -> sqlite [label="save (owner,\nscope hash)"];
+  router -> d_appr [label="/delete …: freeze targets\nin SQLite, then pause", color="#3D6FB6", fontcolor="#3D6FB6"];
+  d_appr -> confirm [label="user reply", color="#C0392B", fontcolor="#C0392B"];
+  confirm -> d_exec [label="DELETE <id>", color="#3D6FB6"];
+  confirm -> d_canc [label="/cancel <id>", color="#3D6FB6"];
+  d_exec -> sqlite [label="soft delete +\naudit (1 txn)", color="#1E8449", fontcolor="#1E8449"];
+  d_canc -> sqlite [label="status + audit", color="#1E8449", fontcolor="#1E8449"];
+
+  // ---------------- Observability ----------------
+  g_fin -> telem [ltail=cluster_graph, style=dotted, color="#B7950B", fontcolor="#B7950B",
+                  label="events from every node,\nmodel attempt and query"];
+  telem -> traces [label="append JSONL", color="#B7950B", fontcolor="#B7950B"];
+  traces -> summary [color="#B7950B"];
+
+  // ---------------- Layout hints ----------------
+  {rank=same; g_retr; golden;}
+  {rank=same; g_plan; gemini;}
+  {rank=same; g_val; sqlval;}
+  {rank=same; g_exec; scoped; bq;}
+  {rank=same; g_chk; ground;}
+  {rank=same; out; telem; traces; summary;}
+
+  // ---------------- Legend ----------------
+  subgraph cluster_legend {
+    label=<<B>Legend</B>>; style="rounded"; color="#999999"; fontsize=12;
+    node [fontsize=9];
+    l1 [label="LangGraph node", fillcolor="#CFE2FF", color="#3D6FB6"];
+    l2 [label="Validation / security\ncheck (trusted code)", fillcolor="#FFD6D6", color="#C0392B"];
+    l3 [label="Application\ncomponent", fillcolor="#ECECEC", color="#666666"];
+    l4 [label="External service", fillcolor="#E8D9F7", color="#7D3C98"];
+    l5 [label="Local data store", shape=cylinder, fillcolor="#D5F5E3", color="#1E8449"];
+    l6 [label="Observability", fillcolor="#FFF3C4", color="#B7950B"];
+    l7 [label="Dashed: conditional,\nopt-in or unused", fillcolor="#FFFFFF", color="#666666", style="rounded,filled,dashed"];
+    {rank=same; l1; l2; l3; l4; l5; l6; l7;}
+    l1 -> l2 -> l3 -> l4 -> l5 -> l6 -> l7 [style=invis];
+  }
+  out -> l4 [style=invis];
+}

@@ -15,3 +15,7 @@ chatgpt/
 *.env
 config/grants.local.json
 .local/
+
+# Misc Files
+diagrams/gemini-api-key-details.png
+docs/poc-assignment.pdf
