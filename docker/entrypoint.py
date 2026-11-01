@@ -17,5 +17,6 @@ for var in SECRET_VARS:
     if path:
         os.environ[var] = Path(path).read_text(encoding='utf-8').strip()
 
+sys.path.insert(0, '/app')
 sys.argv = ['main.py', *sys.argv[1:]]
 runpy.run_path('/app/main.py', run_name='__main__')
