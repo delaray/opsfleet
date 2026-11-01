@@ -1,0 +1,62 @@
+# OpsFleet datachat: interactive chat container + PostgreSQL report library.
+#   python -m scripts.make_docker_secrets          # once: writes ./secrets/* from .env
+#   docker compose up -d postgres
+#   docker compose run --rm datachat --chat --user user-a
+# See docs/docker-image.md.
+
+name: datachat
+
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: admindb
+      POSTGRES_DB: datachatdb
+      POSTGRES_PASSWORD_FILE: /run/secrets/admindb_password
+    secrets: [admindb_password, datachat_db_password]
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+      - ./db/schema.sql:/datachat/schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admindb -d datachatdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  datachat:
+    image: delaray/datachat:1.0.0
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: secrets/app.env          # non-secret settings: PROJECT_ID, GEMINI_MODEL_1, ...
+    environment:
+      DATACHAT_DB_HOST: postgres
+      DATACHAT_DB_PORT: "5432"
+      DATACHAT_DB_NAME: datachatdb
+      DATACHAT_DB_USER: datachat_app
+      DATACHAT_DB_PASSWORD_FILE: /run/secrets/datachat_db_password
+      GEMINI_API_KEY_FILE: /run/secrets/gemini_api_key
+      GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/gcp_adc
+    secrets: [gemini_api_key, datachat_db_password, gcp_adc]
+    volumes:
+      - datachat-data:/app/.local       # traces.jsonl (request traces / logs)
+    stdin_open: true
+    tty: true
+    command: ["--chat", "--user", "user-a"]
+
+secrets:
+  gemini_api_key:
+    file: ./secrets/gemini_api_key
+  datachat_db_password:
+    file: ./secrets/datachat_db_password
+  admindb_password:
+    file: ./secrets/admindb_password
+  gcp_adc:
+    file: ./secrets/gcp_adc.json
+
+volumes:
+  pgdata:
+  datachat-data:

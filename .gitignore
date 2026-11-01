@@ -13,6 +13,7 @@ chatgpt/
 
 # API Keys
 *.env
+secrets/
 config/grants.local.json
 .local/
 

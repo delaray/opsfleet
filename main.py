@@ -84,7 +84,7 @@ def main() -> int:
     load_dotenv('.env', override=True)
     parser = argparse.ArgumentParser(description="OpsFleet: authorized retail aggregate analysis")
     parser.add_argument('--user', required=True, help='Trusted local operator-selected identity; not web authentication')
-    parser.add_argument('--grants', default='config/grants.local.json')
+    parser.add_argument('--grants', default=os.getenv('DATACHAT_GRANTS_FILE') or 'config/grants.local.json')
     parser.add_argument('--model', default=os.getenv('GEMINI_MODEL_1') or 'gemini-3.6-flash')
     parser.add_argument('--golden-demo', action='store_true', help='Include clearly labeled synthetic Golden Trio references')
     parser.add_argument('--reports-dsn', default=None,

@@ -1,0 +1,5 @@
+# Files executed inside Linux containers must keep LF line endings on Windows checkouts.
+docker/** text eol=lf
+db/*.sql text eol=lf
+Dockerfile text eol=lf
+compose.yaml text eol=lf
