@@ -1,4 +1,4 @@
-# OpsFleet
+# AI Technical Assignment - Retail Company
 
 CLI retail analysis assistant in development. See [ARCHITECTURE.md](ARCHITECTURE.md)
 and [REQUIREMENTS.md](REQUIREMENTS.md) for the proposed system and full scope.
@@ -12,7 +12,9 @@ aggregate executor is implemented in `src/trusted_bq.py`; see
 `main.py` supports single aggregate questions and an interactive conversation with
 strict request and output checks. The three executive scopes are configured locally.
 Typed follow-up context and a bounded aggregate cache live in memory for one identity.
-Owned reports and deletion approvals persist in SQLite; see [REPORTS.md](REPORTS.md).
+Owned reports and deletion approvals persist in PostgreSQL (`datachatdb`) with
+per-executive row-level security; see [REPORTS.md](REPORTS.md) and
+[docs/postgresql.md](docs/postgresql.md).
 Production authentication, durable analytical conversations and broader language
 support remain to be added.
 Request tracing and shared execution budgets are implemented; see
@@ -101,8 +103,15 @@ keep grant configuration accessible only to administrators.
 
 ```bash
 uv sync
+uv run python -m scripts.setup_datachatdb   # once: PostgreSQL roles, datachatdb(+_test), schema
 uv run python -m unittest discover -s tests -v
 ```
+
+`scripts/setup_datachatdb.py` uses the installation superuser in `PG_*` only to create
+roles and databases, then writes dedicated `DATACHAT_DB_*` credentials to `.env`; the
+application and tests use only those. Report tests run against the disposable
+`datachatdb_test` database and are skipped if it is unreachable. See
+[docs/postgresql.md](docs/postgresql.md).
 
 The tests use synthetic fixtures and make no Google API calls. Real use needs an
 API key and a supported model ID for Gemini, plus Application Default Credentials
@@ -124,7 +133,8 @@ DELETE OPERATION_ID
 
 The preview shows exact report IDs/titles before a LangGraph approval interrupt.
 Only the matching `DELETE OPERATION_ID` confirms deletion; cancellation leaves
-reports intact. The library is `.local/opsfleet.sqlite3`. Read [REPORTS.md](REPORTS.md)
+reports intact. The library is the PostgreSQL database `datachatdb`; provision it once
+with `uv run python -m scripts.setup_datachatdb`. Read [REPORTS.md](REPORTS.md)
 for search-based deletion, ownership/scope rules, restart recovery and the offline
 demo `uv run python -m examples.report_demo`.
 
@@ -244,6 +254,7 @@ before adding checkpoint persistence, and expose only the final answer to users.
    statuses. Decide whether revenue means completed item sale price, how returns
    are excluded, and the reporting timezone. Create two synthetic identities with
    disjoint product grants. Do not infer identity or grants from a chat message.
+
 2. **Implement `AnalysisServices`.** `authorize_request(question, user_id)` looks
    up authenticated grants and rejects or sanitizes unsafe input before any model
    call. `retrieve_context(question, user_id)` returns approved schema, metrics,
@@ -251,6 +262,7 @@ before adding checkpoint persistence, and expose only the final answer to users.
    `validate_sql(sql, user_id)` parses BigQuery SQL, validates a single allowed read
    query, resolves all tables/columns/subqueries, rejects PII and external access,
    and returns canonical SQL. A regex or prompt-based filter is insufficient.
+
 3. **Build the trusted executor.** `execute_sql(sql, user_id)` rechecks current
    grants and SQL at the data-access boundary. Use controlled views or an audited
    AST transformation so every relevant source is restricted to allowed products;
@@ -260,6 +272,7 @@ before adding checkpoint persistence, and expose only the final answer to users.
    allowed output columns before returning aggregate JSON. Extend the runner with
    explicit job configuration and metadata; its current one-argument method cannot
    enforce this contract. Test bypass attempts before enabling real execution.
+
 4. **Complete the minimal live slice.** `validate_output(answer, evidence, user_id)`
    enforces privacy and grounding before publication. Only a sanitized SQL syntax
    or schema error should raise `RepairableQueryError`; permission, privacy, budget
@@ -269,6 +282,7 @@ before adding checkpoint persistence, and expose only the final answer to users.
    default means at most two candidate SQL attempts. The trusted executor's scoped
    count and complete Gemini-to-BigQuery count paths have passed for all three users.
    Approved grouped analysis now also uses exact SQL/output checks.
+
 5. **CLI and safe conversation context (initial implementation complete).**
    `main.py --chat` invokes the graph and prints only the final answer. The local
    operator selects an identity from trusted grants; production authentication is
@@ -276,19 +290,22 @@ before adding checkpoint persistence, and expose only the final answer to users.
    follow-ups, clears it on grant changes/reset, and rebuilds query/evidence/error
    state on every turn. Next add authenticated session IDs and durable checkpoints,
    with authorization on each thread and sanitization before persistence.
+
 6. **Support multi-step analyses.** Replace the single `plan/sql/evidence` slots
    with a bounded list of query steps and evidence keyed by step ID. Every step
    repeats validation and trusted execution. The shared request deadline and
    model/query/byte ledger are now implemented; reuse the same request scope across
    future plan steps. Deadlines are cooperative and services must bound their own
    blocking calls. Avoid treating lack of results as permission to widen access.
+
 7. **Saved reports and deletion (local implementation complete).** Deterministic
-   reports combine recent validated analyses with findings and action items. SQLite
-   enforces owned storage and durable pending operations. The separate LangGraph
+   reports combine recent validated analyses with findings and action items. PostgreSQL
+   row-level security enforces owned storage and durable pending operations. The separate LangGraph
    workflow freezes IDs/versions, interrupts for explicit token-bound confirmation,
    revalidates ownership/expiry/versions and soft-deletes atomically with audit.
    Cancellation has no report side effect. Production authentication, retention,
    export lifecycle and managed durable storage remain deployment work.
+
 8. **Resilience and observability (local implementation complete).** Shared request
    IDs correlate node/model/query/report events. JSONL traces include latency,
    retries, usage metadata, query/job bytes and structured failures without raw
@@ -296,6 +313,7 @@ before adding checkpoint persistence, and expose only the final answer to users.
    external work after exhaustion. An offline failure-injection demo and summary
    command support debugging. Production monitoring, retention and distributed
    budgets remain deployment work.
+   
 9. **Implement production extensions separately.** Durable storage, Cloud Run/IAM,
    Vertex AI authentication, Golden Trio ingestion/retrieval, preferences, persona
    management and feedback evaluation follow the design documents. The present

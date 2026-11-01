@@ -15,7 +15,7 @@ digraph opsfleet_poc {
   // Trusted check     #FFD6D6 / #C0392B
   // App component     #ECECEC / #666666
   // External service  #E8D9F7 / #7D3C98
-  // Local data store  #D5F5E3 / #1E8449
+  // Data store        #D5F5E3 / #1E8449
   // Observability     #FFF3C4 / #B7950B
   // User              #FFFFFF / #333333
 
@@ -57,10 +57,11 @@ digraph opsfleet_poc {
   gemini [label="Gemini API\ngemini-3.6-flash (REST, API key)\n30 s/attempt, ≤2 retries", shape=box, fillcolor="#E8D9F7", color="#7D3C98"];
   bq     [label="BigQuery\nthelook_ecommerce\norder_items ⋈ products\n(orders, users unused)", shape=cylinder, fillcolor="#E8D9F7", color="#7D3C98"];
 
-  // Local data stores
+  // Data stores
   grants [label="config/grants.local.json\nuser → catalog scope", shape=cylinder, fillcolor="#D5F5E3", color="#1E8449"];
   golden [label="knowledge/golden_trios.demo.json\nsynthetic Trios; opt-in --golden-demo;\nvalidated + audience-filtered", shape=cylinder, fillcolor="#D5F5E3", color="#1E8449"];
-  sqlite [label=".local/opsfleet.sqlite3\nreports · deletion ops · audit", shape=cylinder, fillcolor="#D5F5E3", color="#1E8449"];
+  pg [label="PostgreSQL datachatdb\nreports · deletion ops · audit", shape=cylinder, fillcolor="#D5F5E3", color="#1E8449"];
+  rls [label="Row-level security\nSET LOCAL ROLE executive;\nowner_id = current_user", shape=box, fillcolor="#FFD6D6", color="#C0392B"];
 
   subgraph cluster_del {
     label=<<B>LangGraph — deletion approval graph</B> (src/report_workflow.py)>; style="rounded"; color="#3D6FB6"; fontsize=12;
@@ -114,13 +115,14 @@ digraph opsfleet_poc {
   // ---------------- Reports ----------------
   router -> reportgen [label="/report"];
   session -> reportgen [label="cached evidence", style=dashed];
-  reportgen -> sqlite [label="save (owner,\nscope hash)"];
-  router -> d_appr [label="/delete …: freeze targets\nin SQLite, then pause", color="#3D6FB6", fontcolor="#3D6FB6"];
+  reportgen -> rls [label="save (owner,\nscope hash)"];
+  router -> d_appr [label="/delete …: freeze targets\nin PostgreSQL, then pause", color="#3D6FB6", fontcolor="#3D6FB6"];
   d_appr -> confirm [label="user reply", color="#C0392B", fontcolor="#C0392B"];
   confirm -> d_exec [label="DELETE <id>", color="#3D6FB6"];
   confirm -> d_canc [label="/cancel <id>", color="#3D6FB6"];
-  d_exec -> sqlite [label="soft delete +\naudit (1 txn)", color="#1E8449", fontcolor="#1E8449"];
-  d_canc -> sqlite [label="status + audit", color="#1E8449", fontcolor="#1E8449"];
+  d_exec -> rls [label="soft delete +\naudit (1 txn)", color="#1E8449", fontcolor="#1E8449"];
+  d_canc -> rls [label="status + audit", color="#1E8449", fontcolor="#1E8449"];
+  rls -> pg [label="owned rows only", dir=both, color="#1E8449", fontcolor="#1E8449"];
 
   // ---------------- Observability ----------------
   g_fin -> telem [ltail=cluster_graph, style=dotted, color="#B7950B", fontcolor="#B7950B",
@@ -144,7 +146,7 @@ digraph opsfleet_poc {
     l2 [label="Validation / security\ncheck (trusted code)", fillcolor="#FFD6D6", color="#C0392B"];
     l3 [label="Application\ncomponent", fillcolor="#ECECEC", color="#666666"];
     l4 [label="External service", fillcolor="#E8D9F7", color="#7D3C98"];
-    l5 [label="Local data store", shape=cylinder, fillcolor="#D5F5E3", color="#1E8449"];
+    l5 [label="Data store", shape=cylinder, fillcolor="#D5F5E3", color="#1E8449"];
     l6 [label="Observability", fillcolor="#FFF3C4", color="#B7950B"];
     l7 [label="Dashed: conditional,\nopt-in or unused", fillcolor="#FFFFFF", color="#666666", style="rounded,filled,dashed"];
     {rank=same; l1; l2; l3; l4; l5; l6; l7;}

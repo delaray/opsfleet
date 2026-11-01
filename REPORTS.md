@@ -77,9 +77,17 @@ rather than accepting unrestricted model-written claims while Gemini is rate lim
 
 ## Ownership, grants and persistence
 
-The default database is `.local/opsfleet.sqlite3`, ignored by Git. Select another
-administrator-controlled local file with `--reports-db`. New files are created with
-owner-only permissions, and all database values use SQL parameters.
+Reports are stored in the PostgreSQL database `datachatdb` (schema `datachat`),
+provisioned by `uv run python -m scripts.setup_datachatdb` and documented in
+[docs/postgresql.md](docs/postgresql.md). The CLI connects with the `DATACHAT_DB_*`
+credentials in `.env`; `--reports-dsn` selects another administrator-controlled
+connection string. All database values use SQL parameters.
+
+The application connects as `datachat_app`, which has no table privileges of its own.
+Every transaction runs `SET LOCAL ROLE` to the owning executive's role (`user-a`,
+`user-b`, `user-c`), so PostgreSQL row-level security independently limits each
+statement to that executive's rows. Grants make the audit log append-only and allow
+only soft deletion; an identity without a provisioned role is denied.
 
 `src/report_store.py` stores conversations, reports, pending deletion operations and
 audit events. Reports include owner, conversation, creation timestamp, version,
@@ -94,8 +102,9 @@ over revoked data. Lists expose only generated titles and IDs, not report result
 The application rechecks identity/grants before generation, save, retrieval and
 approval execution. The local CLI operator is still trusted to select `--user`;
 this is not a replacement for production authentication or per-request API identity.
-SQLite files and audit rows are trusted local application storage, not a tamper-proof
-audit system against a machine administrator. Application-level checks cannot provide
+Audit rows cannot be changed by the application role, but `admindb` and the
+installation superuser can; this is not a tamper-proof audit system against a
+database administrator. Application-level checks cannot provide
 instantaneous revocation without coordinating the grant store and in-flight requests.
 
 ## Deletion workflow
@@ -114,7 +123,8 @@ flowchart TD
 `src/report_workflow.py` uses a real LangGraph `interrupt()` and `Command(resume=...)`.
 Its in-memory checkpoint holds only an operation ID and decision/status; the interrupt
 payload contains safe generated titles, IDs and versions, not report bodies. The
-SQLite operation is the durable source of truth. A fresh graph can reconstruct the
+PostgreSQL operation row is the durable source of truth; confirmation locks the
+operation and target rows (`SELECT … FOR UPDATE`) so competing decisions serialize. A fresh graph can reconstruct the
 same approval interrupt after restart without resolving targets again. This avoids
 requiring durable checkpoints for raw analytical state in the initial POC.
 

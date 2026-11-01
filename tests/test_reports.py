@@ -1,6 +1,5 @@
 import json
 import tempfile
-import sqlite3
 import io
 from contextlib import redirect_stdout
 import unittest
@@ -8,7 +7,10 @@ import uuid
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import psycopg
+
 from main import run_chat
+from tests.pg_fixture import TEST_DSN, admin_execute, requires_postgres, reset_test_database
 from main import main as cli_main
 from src.conversation import AnalysisRequest, AnalysisSession, AnalysisSnapshot
 from src.grants import ProductScope, scope_fingerprint
@@ -74,13 +76,15 @@ class GenerationTests(unittest.TestCase):
                 generate_report([snapshot(self.scope, rows=rows)], self.scope)
 
 
+@requires_postgres
 class StoreFixture:
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        self.path = Path(directory.name) / 'reports.sqlite3'
+        self.path = Path(directory.name)
+        reset_test_database()
         self.clock = Mock(return_value=1000)
-        self.store = ReportStore(self.path, clock=self.clock)
+        self.store = ReportStore(TEST_DSN, clock=self.clock)
         self.addCleanup(lambda: self.store.close())
         self.owner, self.other = 'user-a', 'user-b'
         self.conversation = str(uuid.uuid4())
@@ -189,11 +193,36 @@ class StoreTests(StoreFixture, unittest.TestCase):
         self.assertEqual(len(self.store.list_reports(self.other)), 1)
         self.assertEqual(len(self.store.audit(self.other)), 1)
 
+    def test_unprovisioned_identity_is_denied_by_postgres(self):
+        with self.assertRaises(PolicyDenied):
+            self.store.register_conversation('mallory', str(uuid.uuid4()))
+        with self.assertRaises(PolicyDenied):
+            self.store.list_reports('datachat_app')
+
+    def test_row_level_security_blocks_cross_owner_access_in_postgres(self):
+        report_id = self.save()
+        with self.store._transaction(self.other) as conn:
+            self.assertIsNone(conn.execute('SELECT id FROM reports WHERE id=%s', (report_id,)).fetchone())
+            updated = conn.execute('UPDATE reports SET deleted_at=1 WHERE id=%s', (report_id,)).rowcount
+        self.assertEqual(updated, 0)
+        with self.assertRaises(psycopg.errors.InsufficientPrivilege):
+            with self.store._transaction(self.other) as conn:
+                conn.execute('INSERT INTO conversations(id, owner_id) VALUES (%s, %s)', (str(uuid.uuid4()), self.owner))
+
+    def test_audit_is_append_only_and_reports_cannot_be_hard_deleted(self):
+        self.save()
+        for statement in ['DELETE FROM report_audit', 'UPDATE report_audit SET action=%s', 'DELETE FROM reports',
+                          'UPDATE reports SET body=%s']:
+            with self.subTest(statement=statement), self.assertRaises(psycopg.errors.InsufficientPrivilege):
+                with self.store._transaction(self.owner) as conn:
+                    conn.execute(statement, ('x',) if '%s' in statement else ())
+        self.assertEqual(len(self.store.audit(self.owner)), 1)
+
     def test_persistence_after_restart(self):
         report_id = self.save()
         operation = self.prepare()
         self.store.close()
-        self.store = ReportStore(self.path, clock=self.clock)
+        self.store = ReportStore(TEST_DSN, clock=self.clock)
         self.assertEqual(self.store.get_report(self.owner, report_id, self.scope)['body'], self.draft.body)
         self.assertEqual(self.store.get_operation(self.owner, self.conversation, operation['id'])['status'], 'pending')
 
@@ -201,15 +230,15 @@ class StoreTests(StoreFixture, unittest.TestCase):
         report_id = self.save()
         operation = self.prepare()
         # Simulate a future report-edit feature changing the version after preview.
-        self.store._conn.execute('UPDATE reports SET version=version+1 WHERE id=?', (report_id,))
+        admin_execute('UPDATE datachat.reports SET version=version+1 WHERE id=%s', (report_id,))
         self.assertEqual(self.resolve(operation)['status'], 'stale')
         self.assertEqual(len(self.store.list_reports(self.owner)), 1)
 
     def test_audit_failure_rolls_back_deletion_and_decision(self):
         report_id = self.save()
         operation = self.prepare()
-        with patch.object(self.store, '_audit', side_effect=sqlite3.OperationalError('test failure')):
-            with self.assertRaises(sqlite3.OperationalError):
+        with patch.object(self.store, '_audit', side_effect=psycopg.OperationalError('test failure')):
+            with self.assertRaises(psycopg.OperationalError):
                 self.resolve(operation)
         self.assertEqual(self.store.get_report(self.owner, report_id, self.scope)['version'], 1)
         self.assertEqual(self.store.get_operation(self.owner, self.conversation, operation['id'])['status'], 'pending')
@@ -217,7 +246,7 @@ class StoreTests(StoreFixture, unittest.TestCase):
     def test_two_connections_competing_deletions_are_atomic(self):
         report_id = self.save()
         first, second = self.prepare(), self.prepare()
-        another = ReportStore(self.path, clock=self.clock)
+        another = ReportStore(TEST_DSN, clock=self.clock)
         self.addCleanup(another.close)
         self.assertEqual(another.resolve_deletion(self.owner, self.conversation, second['id'], confirm=True)['status'], 'confirmed')
         self.assertEqual(self.resolve(first)['status'], 'stale')
@@ -254,7 +283,7 @@ class WorkflowTests(StoreFixture, unittest.TestCase):
         operation = self.prepare()
         self.workflow().pause(operation['id'])
         self.store.close()
-        self.store = ReportStore(self.path, clock=self.clock)
+        self.store = ReportStore(TEST_DSN, clock=self.clock)
         fresh_workflow = self.workflow()
         self.assertEqual(fresh_workflow.resume(operation['id'], confirm=True)['status'], 'confirmed')
 
@@ -345,7 +374,7 @@ class OneShotCLITests(StoreFixture, unittest.TestCase):
         job.result.return_value = rows
         client.query.side_effect = [Mock(total_bytes_processed=10), job]
         arguments = ['main.py', '--user', 'user-a', '--grants', str(grants_path),
-                     '--reports-db', str(self.path), '--trace-file', str(self.path.parent / 'trace.jsonl'),
+                     '--reports-dsn', TEST_DSN, '--trace-file', str(self.path.parent / 'trace.jsonl'),
                      '--question', 'Show item counts by category', '--report']
         with patch('sys.argv', arguments), patch('main.load_dotenv'), \
              patch.dict('os.environ', {'PROJECT_ID': 'fixture', 'GEMINI_API_KEY': 'not-a-key'}), \

@@ -13,7 +13,7 @@ from src.golden import GoldenKnowledgeStore
 from src.graph import PolicyDenied
 from src.trusted_bq import TrustedBigQueryExecutor
 from src.report_commands import REPORT_HELP, ReportCommands
-from src.report_store import ReportStore
+from src.report_store import ReportStore, datachat_conninfo
 from src.telemetry import BudgetExceeded, JsonlTraceSink, RequestLimits, request_scope
 
 
@@ -87,7 +87,8 @@ def main() -> int:
     parser.add_argument('--grants', default='config/grants.local.json')
     parser.add_argument('--model', default=os.getenv('GEMINI_MODEL_1') or 'gemini-3.6-flash')
     parser.add_argument('--golden-demo', action='store_true', help='Include clearly labeled synthetic Golden Trio references')
-    parser.add_argument('--reports-db', default='.local/opsfleet.sqlite3', help='Local owned report library')
+    parser.add_argument('--reports-dsn', default=None,
+                        help='PostgreSQL report library connection string; default from DATACHAT_DB_* in .env')
     parser.add_argument('--conversation-id', help='Resume report operations in an existing owned conversation UUID')
     parser.add_argument('--report', action='store_true', help='Generate and save a report after the one-shot analysis')
     parser.add_argument('--trace-file', default='.local/traces.jsonl', help='Privacy-safe JSONL request trace')
@@ -122,8 +123,9 @@ def main() -> int:
         sink = JsonlTraceSink(args.trace_file)
         session = AnalysisSession(executor, user_id=args.user, model=args.model, knowledge=knowledge,
                                   request_limits=limits, trace_sink=sink)
+        reports_dsn = args.reports_dsn or datachat_conninfo()
         if args.chat:
-            store = ReportStore(args.reports_db)
+            store = ReportStore(reports_dsn)
             reports = ReportCommands(session, store, conversation_id=args.conversation_id)
             return run_chat(session, reports=reports)
         with request_scope(limits=limits, sink=sink, kind='cli_turn') as runtime:
@@ -132,7 +134,7 @@ def main() -> int:
             if result.get('error'):
                 print(f"Request ID: {runtime.request_id}")
             if args.report and not result.get('error') and result.get('evidence'):
-                store = ReportStore(args.reports_db)
+                store = ReportStore(reports_dsn)
                 reports = ReportCommands(session, store, conversation_id=args.conversation_id)
                 print(reports.create_report())
             return 1 if result.get('error') or not result.get('evidence') else 0

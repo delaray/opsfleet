@@ -38,7 +38,8 @@ by deterministic Python, not by the model. Diagram: [`diagrams/poc-architecture.
 - `/report` (or *"create a report with action items"*) builds a **deterministic** markdown
   report (`src/report_generation.py`) from up to 8 cached results. Each section has the data
   table, findings, an investigation-style action item and caveats. The report is saved to
-  SQLite (`src/report_store.py`) with its owner, conversation and a hash of the product scope.
+  PostgreSQL `datachatdb` (`src/report_store.py`) with its owner, conversation and a hash of
+  the product scope; row-level security restricts each executive role to its own rows.
 - `/delete <id> | conversation | all | mentioning TEXT` freezes the exact owned targets in a
   pending operation. A separate **LangGraph approval graph** (`src/report_workflow.py`) then
   pauses with `interrupt()`. Only the exact text `DELETE <operation-id>` within 15 minutes

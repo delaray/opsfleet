@@ -45,7 +45,8 @@ flowchart TB
 
     grants[("config/grants.local.json")]
     golden[("knowledge/golden_trios.demo.json")]
-    sqlite[(".local/opsfleet.sqlite3<br/>reports · deletion ops · audit")]
+    pg[("PostgreSQL datachatdb<br/>reports · deletion ops · audit")]
+    rls["Row-level security<br/>SET LOCAL ROLE executive;<br/>owner_id = current_user"]
 
     telem["Telemetry request_scope()<br/>request ID · deadline · model/query/byte budgets"]
     traces[(".local/traces.jsonl")]
@@ -86,13 +87,14 @@ flowchart TB
 
     router -->|/report| reportgen
     session -.->|cached evidence| reportgen
-    reportgen -->|"save (owner, scope hash)"| sqlite
+    reportgen -->|"save (owner, scope hash)"| rls
     router -->|"/delete …: freeze targets, pause"| d_appr
     d_appr -->|user reply| confirm
     confirm -->|"DELETE &lt;id&gt;"| d_exec
     confirm -->|"/cancel &lt;id&gt;"| d_canc
-    d_exec -->|soft delete + audit, 1 txn| sqlite
-    d_canc -->|status + audit| sqlite
+    d_exec -->|soft delete + audit, 1 txn| rls
+    d_canc -->|status + audit| rls
+    rls <-->|owned rows only| pg
 
     AG -.->|events from every node, model attempt, query| telem
     telem -->|append JSONL| traces
@@ -104,7 +106,7 @@ flowchart TB
         L2[Validation / security check]
         L3[Application component]
         L4[External service]
-        L5[(Local data store)]
+        L5[(Data store)]
         L6[Observability]
     end
 
@@ -119,9 +121,9 @@ flowchart TB
 
     class g_auth,g_class,g_retr,g_plan,g_clar,g_val,g_exec,g_syn,g_chk,g_fail,g_fin,d_appr,d_exec,d_canc,L1 lg
     class g_schema unused
-    class parser,grantchk,sqlval,scoped,ground,confirm,L2 sec
+    class parser,grantchk,sqlval,scoped,ground,confirm,rls,L2 sec
     class cli,router,session,reportgen,L3 app
     class gemini,bq,L4 ext
-    class grants,golden,sqlite,L5 store
+    class grants,golden,pg,L5 store
     class telem,traces,summary,L6 obs
     class user,out actor

@@ -22,7 +22,7 @@ Build a CLI-based conversational retail data analysis agent using LangGraph, Gem
 - [ ] Dynamic BigQuery SQL generation, validation, safe execution, and grounded answers.
 - [ ] Multi-step analytics and report generation with insights and action items.
 - [ ] Safety: analytical/request intent boundary; prohibit PII disclosure; enforce per-user product entitlement at data-access boundary; handle malicious prompts and data.
-- [x] Saved reports: local owned SQLite list/retrieve/save, frozen-target LangGraph confirmation/cancellation, expiry, atomic soft deletion and audit. Production authentication/storage/retention remain separate.
+- [x] Saved reports: owned PostgreSQL (row-level security) list/retrieve/save, frozen-target LangGraph confirmation/cancellation, expiry, atomic soft deletion and audit. Production authentication/storage/retention remain separate.
 - [ ] Resilience: SQL syntax repair, appropriate handling of empty results, bounded retries/backoff, API outages and timeouts, controlled cost budgets, stable CLI errors.
 - [x] Local observability: correlated request/node/model/query/report traces, latency and reported tokens/bytes, missing-usage coverage, structured failures, shared budgets and privacy-safe JSONL logs. Dollar cost conversion and production monitoring remain design/deployment work.
 - [ ] Reproducible setup and example run on another machine.

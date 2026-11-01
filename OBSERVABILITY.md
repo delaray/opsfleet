@@ -64,12 +64,12 @@ For the real adapter, every HTTP attempt consumes the shared allowance, includin
 failed attempts. A denied retry does not sleep or submit another request.
 
 The deadline is cooperative, not a mechanism that forcibly kills threads or
-undoes committed SQLite operations. Network/result calls receive remaining-time
+undoes committed PostgreSQL operations. Network/result calls receive remaining-time
 timeouts, but some blocking I/O can return late. Late analytical results are rejected
 and are not cached or published. Query cancellation is best effort and has a separate
 two-second cleanup allowance. A submission timeout can leave remote execution
 uncertain; its reserved query allowance is retained and it is not resubmitted.
-SQLite transactions still enforce their own atomicity and audit guarantees.
+PostgreSQL transactions still enforce their own atomicity and audit guarantees.
 
 Direct adapter/graph integration can share these controls explicitly:
 
@@ -141,7 +141,7 @@ budget enforcement remains active and committed report operations are not rolled
 back merely because the optional trace sink is unavailable. Trace rotation,
 retention, centralized collection, distributed counters and tamper resistance
 remain production work. A process crash may lose an unfinished trace, while report
-ownership and deletion decisions remain in the SQLite audit transaction.
+ownership and deletion decisions remain in the PostgreSQL audit transaction.
 
 ## Offline demonstration and verification
 

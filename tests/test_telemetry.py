@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 from urllib.error import HTTPError
 
+from tests.pg_fixture import TEST_DSN, requires_postgres, reset_test_database
 from src.conversation import AnalysisSession
 from src.gemini import GeminiAPIError, query_gemini
 from src.graph import AnalysisServices, RepairableQueryError, build_graph
@@ -295,6 +296,7 @@ class SummaryTests(unittest.TestCase):
             self.assertEqual(result['unmetered_model_attempts'], 1)
             self.assertNotIn('PRIVATE_', json.dumps(result))
 
+    @requires_postgres
     def test_report_approvals_are_linked_without_report_content(self):
         from src.conversation import AnalysisRequest, AnalysisSnapshot
         from src.grants import scope_fingerprint
@@ -302,23 +304,25 @@ class SummaryTests(unittest.TestCase):
         from src.report_store import ReportStore
         events = []
         executor = TrustedBigQueryExecutor(SimpleNamespace(client=None), lambda user: [1, 2])
-        session = AnalysisSession(executor, user_id='PRIVATE_USER', model='fixture')
+        # Report owners must be provisioned datachatdb executive roles.
+        session = AnalysisSession(executor, user_id='user-c', model='fixture')
         session.snapshots = [AnalysisSnapshot(AnalysisRequest(group_by='product_category'), json.dumps({
             'rows': [{'product_category': 'PRIVATE_CATEGORY', 'item_count': 12}],
             'cohort_suppression_applied': True, 'min_customers': 5}), scope_fingerprint((1, 2)))]
-        with tempfile.TemporaryDirectory() as directory:
-            store = ReportStore(Path(directory) / 'reports.sqlite3')
-            try:
-                commands = ReportCommands(session, store)
-                with request_scope(sink=events.append, kind='cli_turn'):
-                    commands.handle('/report')
-                    commands.handle('/delete conversation')
-                operation = store.pending_operations(session.user_id, commands.conversation_id)[0]
-                with request_scope(sink=events.append, kind='cli_turn'):
-                    commands.handle('/cancel ' + operation['id'])
-            finally:
-                store.close()
+        reset_test_database()
+        store = ReportStore(TEST_DSN)
+        try:
+            commands = ReportCommands(session, store)
+            with request_scope(sink=events.append, kind='cli_turn'):
+                commands.handle('/report')
+                commands.handle('/delete conversation')
+            operation = store.pending_operations(session.user_id, commands.conversation_id)[0]
+            with request_scope(sink=events.append, kind='cli_turn'):
+                commands.handle('/cancel ' + operation['id'])
+        finally:
+            store.close()
         self.assertNotIn('PRIVATE_', json.dumps(events))
+        self.assertNotIn('user-c', json.dumps(events))
         operations = [event for event in events if event['event'] == 'report_operation']
         self.assertEqual({event['operation_id'] for event in operations}, {operation['id']})
         self.assertEqual(len({event['request_id'] for event in operations}), 2)
