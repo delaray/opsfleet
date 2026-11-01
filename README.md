@@ -102,6 +102,7 @@ request. A deployed service must get the identity from verified authentication a
 keep grant configuration accessible only to administrators.
 
 ```bash
+cp .env.example .env                        # then fill in keys and PG_* superuser credentials
 uv sync
 uv run python -m scripts.setup_datachatdb   # once: PostgreSQL roles, datachatdb(+_test), schema
 uv run python -m unittest discover -s tests -v
