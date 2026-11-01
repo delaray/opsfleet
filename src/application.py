@@ -1,4 +1,6 @@
-"""First live vertical slice: authorized item counts with exact output grounding."""
+"""
+First live vertical slice: authorized item counts with exact output grounding.
+"""
 
 import json
 
@@ -11,9 +13,10 @@ COUNT_SQL = "SELECT COUNT(*) AS `item_count` FROM retail_items"
 
 def build_count_graph(executor: TrustedBigQueryExecutor, *, model: str, llm=None):
     def authorize(question, user_id):
-        executor.retrieve_context("", user_id)  # Verify grants before inference.
+        # Verify grants before inference.
+        executor.retrieve_context("", user_id)  
         if question.strip().casefold().rstrip("?.") != COUNT_QUESTION.casefold().rstrip("?"):
-            raise PolicyDenied("This initial flow supports only the item-count question")
+            raise PolicyDenied("This flow supports only the item-count question")
         return COUNT_QUESTION
 
     def validate(sql, user_id):

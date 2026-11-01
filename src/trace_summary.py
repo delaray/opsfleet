@@ -7,6 +7,7 @@ import statistics
 import uuid
 from collections import Counter
 from pathlib import Path
+
 from .telemetry import FAILURE_CATEGORIES
 
 

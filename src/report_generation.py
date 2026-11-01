@@ -4,7 +4,7 @@ import json
 from dataclasses import asdict, dataclass
 from decimal import Decimal
 
-from .conversation import AnalysisSnapshot, METRICS, _cell, render_evidence
+from .conversation import METRICS, AnalysisSnapshot, _cell, render_evidence
 from .graph import PolicyDenied
 
 

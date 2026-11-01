@@ -1,17 +1,17 @@
+import datetime as dt
 import json
 import logging
 import os
 import random
 import re
 import time
-import datetime as dt
 from email.utils import parsedate_to_datetime
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
-from urllib.error import URLError
 
 from dotenv import load_dotenv
+
 if __package__:
     from .telemetry import BudgetExceeded, request_scope
 else:  # Preserve `python src/gemini.py` smoke-test usage.

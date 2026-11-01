@@ -10,11 +10,11 @@ import json
 import re
 from dataclasses import dataclass, replace
 
-from .graph import AnalysisServices, PolicyDenied, build_graph
 from .golden import GoldenKnowledgeStore, reference_context
 from .grants import scope_fingerprint
+from .graph import AnalysisServices, PolicyDenied, build_graph
+from .telemetry import BudgetExceeded, RequestLimits, current_request, request_scope
 from .trusted_bq import TrustedBigQueryExecutor, validate_aggregate_sql
-from .telemetry import BudgetExceeded, RequestLimits, request_scope, current_request
 
 HELP = """Examples:
   How many order items can I access?

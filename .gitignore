@@ -6,7 +6,7 @@ dist/
 wheels/
 *.egg-info
 chatgpt/
-chatgpt/
+
 
 # Virtual environments
 .venv

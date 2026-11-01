@@ -18,7 +18,8 @@ from pathlib import Path
 class BudgetExceeded(RuntimeError):
     def __init__(self, reason: str):
         self.reason = reason
-        super().__init__(f"Request execution budget exhausted ({reason}). No further external calls were made.")
+        super().__init__(f"Request execution budget exhausted ({reason})."
+                         "No further external calls were made.")
 
 
 @dataclass(frozen=True)
@@ -33,9 +34,10 @@ class RequestLimits:
     def __post_init__(self):
         if not math.isfinite(self.deadline_seconds) or self.deadline_seconds <= 0:
             raise ValueError('The request deadline must be positive and finite')
-        for value in (self.max_model_attempts, self.max_queries, self.max_dry_runs, self.max_query_bytes):
+        for value in (self.max_model_attempts, self.max_queries, 
+                      self.max_dry_runs, self.max_query_bytes):
             if type(value) is not int or value < 0:
-                raise ValueError('Request counters must be non-negative integers')
+                raise ValueError('Request counters must be non-negative ints')
         if type(self.max_output_tokens) is not int or not 1 <= self.max_output_tokens <= 16_384:
             raise ValueError('Output token limit must be between 1 and 16384')
 
@@ -49,6 +51,7 @@ _NUMBERS = {
     'total_usage_responses', 'billed_usage_responses', 'missing_billed_usage_responses',
 }
 _TEXT = {'node', 'phase', 'status', 'category', 'error_type', 'budget_reason', 'kind', 'job_id', 'action', 'operation_id', 'model'}
+
 FAILURE_CATEGORIES = frozenset({
     'budget_exceeded', 'gemini_daily_quota', 'gemini_rate_limit', 'gemini_overloaded', 'gemini_http_error',
     'model_network_error', 'model_response_error', 'model_empty_response', 'node_error', 'policy_denied',
@@ -68,12 +71,8 @@ class JsonlTraceSink:
         encoded = (json.dumps(event, allow_nan=False, sort_keys=True) + '\n').encode()
         with self._lock:
             descriptor = os.open(self.path, os.O_APPEND | os.O_CREAT | os.O_WRONLY, 0o600)
-            try:
-                with os.fdopen(descriptor, 'ab') as stream:
-                    stream.write(encoded)
-            except BaseException:
-                # fdopen owns the descriptor after construction.
-                raise
+            with os.fdopen(descriptor, 'ab') as stream:
+                stream.write(encoded)
 
 
 class RequestRuntime:
