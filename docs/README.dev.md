@@ -1,24 +1,24 @@
 # AI Technical Assignment - Retail Company
 
-CLI retail analysis assistant in development. See [ARCHITECTURE.md](ARCHITECTURE.md)
-and [REQUIREMENTS.md](REQUIREMENTS.md) for the proposed system and full scope.
+CLI retail analysis assistant in development. See [ARCHITECTURE.md](../ARCHITECTURE.md)
+and [REQUIREMENTS.md](../REQUIREMENTS.md) for the proposed system and full scope.
 The original assignment has now been reviewed; see
-[ASSIGNMENT_REVIEW.md](ASSIGNMENT_REVIEW.md) for the mandatory/design-only split and
+[ASSIGNMENT_REVIEW.md](../ASSIGNMENT_REVIEW.md) for the mandatory/design-only split and
 remaining submission gaps.
 
 The initial LangGraph workflow is implemented in `src/graph.py`. The restricted
 aggregate executor is implemented in `src/trusted_bq.py`; see
-[trusted executor integration](TRUSTED_EXECUTOR.md) for its supported SQL and wiring.
+[trusted executor integration](../TRUSTED_EXECUTOR.md) for its supported SQL and wiring.
 `main.py` supports single aggregate questions and an interactive conversation with
 strict request and output checks. The three executive scopes are configured locally.
 Typed follow-up context and a bounded aggregate cache live in memory for one identity.
 Owned reports and deletion approvals persist in PostgreSQL (`datachatdb`) with
-per-executive row-level security; see [REPORTS.md](REPORTS.md) and
-[docs/postgresql.md](docs/postgresql.md).
+per-executive row-level security; see [REPORTS.md](../REPORTS.md) and
+[docs/postgresql.md](postgresql.md).
 Production authentication, durable analytical conversations and broader language
 support remain to be added.
 Request tracing and shared execution budgets are implemented; see
-[OBSERVABILITY.md](OBSERVABILITY.md) for controls, metrics and an offline debugging demo.
+[OBSERVABILITY.md](../OBSERVABILITY.md) for controls, metrics and an offline debugging demo.
 
 ## Local analysis and conversation
 
@@ -112,7 +112,7 @@ uv run python -m unittest discover -s tests -v
 roles and databases, then writes dedicated `DATACHAT_DB_*` credentials to `.env`; the
 application and tests use only those. Report tests run against the disposable
 `datachatdb_test` database and are skipped if it is unreachable. See
-[docs/postgresql.md](docs/postgresql.md).
+[docs/postgresql.md](postgresql.md).
 
 The tests use synthetic fixtures and make no Google API calls. Real use needs an
 API key and a supported model ID for Gemini, plus Application Default Credentials
@@ -135,7 +135,7 @@ DELETE OPERATION_ID
 The preview shows exact report IDs/titles before a LangGraph approval interrupt.
 Only the matching `DELETE OPERATION_ID` confirms deletion; cancellation leaves
 reports intact. The library is the PostgreSQL database `datachatdb`; provision it once
-with `uv run python -m scripts.setup_datachatdb`. Read [REPORTS.md](REPORTS.md)
+with `uv run python -m scripts.setup_datachatdb`. Read [REPORTS.md](../REPORTS.md)
 for search-based deletion, ownership/scope rules, restart recovery and the offline
 demo `uv run python -m examples.report_demo`.
 
